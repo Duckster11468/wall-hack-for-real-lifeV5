@@ -3,25 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Paintball AR ESP HUD</title>
+<title>Paintball AR ESP VR</title>
 
 <style>
-html, body {
-  margin: 0;
-  padding: 0;
-  background: black;
-  overflow: hidden;
+html,body{
+  margin:0;
+  padding:0;
+  background:black;
+  overflow:hidden;
 }
-
-video, canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
+video,canvas{
+  position:absolute;
+  top:0;
+  left:0;
 }
-
-canvas {
-  pointer-events: none;
-}
+canvas{pointer-events:none;}
 </style>
 </head>
 <body>
@@ -29,7 +25,6 @@ canvas {
 <video id="video" autoplay playsinline></video>
 <canvas id="canvas"></canvas>
 
-<!-- MediaPipe -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
@@ -38,226 +33,114 @@ const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+canvas.width = innerWidth;
+canvas.height = innerHeight;
 
-let lastPos = null;
-let lastTime = 0;
-let velocity = {x:0, y:0};
-let lastSeen = 0;
-const PREDICT_TIME = 2000; // ms
+// ================== AI STATE ==================
+let body = {pos:null, vel:{x:0,y:0}, seen:0};
+let head = {pos:null, vel:{x:0,y:0}, seen:0};
 
-// Kamera
-const camera = new Camera(video, {
-  onFrame: async () => {
-    await pose.send({image: video});
-  },
-  width: canvas.width,
-  height: canvas.height
+const PREDICT = 2000;
+
+// ================== CAMERA ==================
+const camera = new Camera(video,{
+  onFrame: async()=>{await pose.send({image:video});},
+  width:canvas.width,
+  height:canvas.height,
+  facingMode:"user"
 });
 camera.start();
 
-// Pose
+// ================== POSE ==================
 const pose = new Pose({
-  locateFile: file =>
-    `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+  locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`
 });
-
 pose.setOptions({
-  modelComplexity: 1,
-  smoothLandmarks: true,
-  minDetectionConfidence: 0.6,
-  minTrackingConfidence: 0.6
+  modelComplexity:1,
+  smoothLandmarks:true,
+  minDetectionConfidence:0.6,
+  minTrackingConfidence:0.6
 });
 
-function drawHitbox(x, y, color, alpha=1) {
-  ctx.globalAlpha = alpha;
-
-  // Vücut
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 3;
-  ctx.strokeRect(x-40, y-80, 80, 160);
-
-  // Kafa
-  ctx.strokeStyle = "#00bfff";
-  ctx.strokeRect(x-20, y-120, 40, 30);
-
-  ctx.globalAlpha = 1;
+// ================== DRAW ==================
+function drawBox(x,y,w,h,color,alpha=1){
+  ctx.globalAlpha=alpha;
+  ctx.strokeStyle=color;
+  ctx.lineWidth=3;
+  ctx.strokeRect(x-w/2,y-h/2,w,h);
+  ctx.globalAlpha=1;
 }
 
-pose.onResults(results => {
+function updateAI(ai,x,y,time){
+  if(ai.pos){
+    const dt=time-ai.seen;
+    ai.vel.x=(x-ai.pos.x)/dt;
+    ai.vel.y=(y-ai.pos.y)/dt;
+  }
+  ai.pos={x,y};
+  ai.seen=time;
+}
+
+// ================== MAIN ==================
+pose.onResults(res=>{
   ctx.clearRect(0,0,canvas.width,canvas.height);
+  const now=performance.now();
 
-  const now = performance.now();
+  if(res.poseLandmarks){
+    const lm=res.poseLandmarks;
 
-  if (results.poseLandmarks) {
-    const lm = results.poseLandmarks;
+    // ===== BODY AI =====
+    const bx=(lm[11].x+lm[12].x)/2*canvas.width;
+    const by=(lm[23].y+lm[24].y)/2*canvas.height;
 
-    // Omuz merkezi
-    const x = (lm[11].x + lm[12].x) / 2 * canvas.width;
-    const y = (lm[11].y + lm[12].y) / 2 * canvas.height;
+    // ölçek (derinlik)
+    const shoulderDist=Math.abs(lm[11].x-lm[12].x)*canvas.width;
+    const bodyW=shoulderDist*1.2;
+    const bodyH=shoulderDist*2.2;
 
-    drawHitbox(x, y, "red", 1);
+    updateAI(body,bx,by,now);
 
-    if (lastPos) {
-      const dt = now - lastTime;
-      velocity.x = (x - lastPos.x) / dt;
-      velocity.y = (y - lastPos.y) / dt;
+    // ===== HEAD AI =====
+    const hx=lm[0].x*canvas.width;
+    const hy=lm[0].y*canvas.height;
+    const headSize=shoulderDist*0.6;
+
+    updateAI(head,hx,hy,now);
+
+    // ===== VR DRAW =====
+    for(let eye=0;eye<2;eye++){
+      const offset=(eye===0?-30:30);
+      drawBox(bx+offset,by,bodyW,bodyH,"red");
+      drawBox(hx+offset,hy,headSize,headSize,"cyan");
     }
 
-    lastPos = {x, y};
-    lastTime = now;
-    lastSeen = now;
-
-  } else {
-    // 🟥 WALLHACK TAHMİN
-    const dt = now - lastSeen;
-    if (lastPos && dt < PREDICT_TIME) {
-      const px = lastPos.x + velocity.x * dt;
-      const py = lastPos.y + velocity.y * dt;
-      drawHitbox(px, py, "#800020", 0.6);
-    }
+  }else{
+    // ===== WALL PREDICT =====
+    [body,head].forEach((ai,i)=>{
+      const dt=now-ai.seen;
+      if(ai.pos && dt<PREDICT){
+        const px=ai.pos.x+ai.vel.x*dt;
+        const py=ai.pos.y+ai.vel.y*dt;
+        for(let eye=0;eye<2;eye++){
+          const offset=(eye===0?-30:30);
+          drawBox(
+            px+offset,
+            py,
+            i===0?80:40,
+            i===0?160:40,
+            "#800020",
+            0.6
+          );
+        }
+      }
+    });
   }
 
-  // 🥽 VR ORTA ÇİZGİ
-  ctx.strokeStyle = "white";
-  ctx.lineWidth = 2;
+  // VR divider
+  ctx.strokeStyle="white";
   ctx.beginPath();
-  ctx.moveTo(canvas.width/2, 0);
-  ctx.lineTo(canvas.width/2, canvas.height);
-  ctx.stroke();
-});
-</script>
-
-</body>
-</html>
-<!DOCTYPE html>
-<html lang="tr">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Paintball AR ESP HUD</title>
-
-<style>
-html, body {
-  margin: 0;
-  padding: 0;
-  background: black;
-  overflow: hidden;
-}
-
-video, canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-}
-
-canvas {
-  pointer-events: none;
-}
-</style>
-</head>
-<body>
-
-<video id="video" autoplay playsinline></video>
-<canvas id="canvas"></canvas>
-
-<!-- MediaPipe -->
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-
-<script>
-const video = document.getElementById("video");
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
-
-let lastPos = null;
-let lastTime = 0;
-let velocity = {x:0, y:0};
-let lastSeen = 0;
-const PREDICT_TIME = 2000; // ms
-
-// Kamera
-const camera = new Camera(video, {
-  onFrame: async () => {
-    await pose.send({image: video});
-  },
-  width: canvas.width,
-  height: canvas.height
-});
-camera.start();
-
-// Pose
-const pose = new Pose({
-  locateFile: file =>
-    `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-});
-
-pose.setOptions({
-  modelComplexity: 1,
-  smoothLandmarks: true,
-  minDetectionConfidence: 0.6,
-  minTrackingConfidence: 0.6
-});
-
-function drawHitbox(x, y, color, alpha=1) {
-  ctx.globalAlpha = alpha;
-
-  // Vücut
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 3;
-  ctx.strokeRect(x-40, y-80, 80, 160);
-
-  // Kafa
-  ctx.strokeStyle = "#00bfff";
-  ctx.strokeRect(x-20, y-120, 40, 30);
-
-  ctx.globalAlpha = 1;
-}
-
-pose.onResults(results => {
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-
-  const now = performance.now();
-
-  if (results.poseLandmarks) {
-    const lm = results.poseLandmarks;
-
-    // Omuz merkezi
-    const x = (lm[11].x + lm[12].x) / 2 * canvas.width;
-    const y = (lm[11].y + lm[12].y) / 2 * canvas.height;
-
-    drawHitbox(x, y, "red", 1);
-
-    if (lastPos) {
-      const dt = now - lastTime;
-      velocity.x = (x - lastPos.x) / dt;
-      velocity.y = (y - lastPos.y) / dt;
-    }
-
-    lastPos = {x, y};
-    lastTime = now;
-    lastSeen = now;
-
-  } else {
-    // 🟥 WALLHACK TAHMİN
-    const dt = now - lastSeen;
-    if (lastPos && dt < PREDICT_TIME) {
-      const px = lastPos.x + velocity.x * dt;
-      const py = lastPos.y + velocity.y * dt;
-      drawHitbox(px, py, "#800020", 0.6);
-    }
-  }
-
-  // 🥽 VR ORTA ÇİZGİ
-  ctx.strokeStyle = "white";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(canvas.width/2, 0);
-  ctx.lineTo(canvas.width/2, canvas.height);
+  ctx.moveTo(canvas.width/2,0);
+  ctx.lineTo(canvas.width/2,canvas.height);
   ctx.stroke();
 });
 </script>
