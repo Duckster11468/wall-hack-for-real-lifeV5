@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Paintball AR ESP HUD</title>
+
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  background: black;
+  overflow: hidden;
+}
+
+video, canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+canvas {
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas"></canvas>
+
+<!-- MediaPipe -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+<script>
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let lastPos = null;
+let lastTime = 0;
+let velocity = {x:0, y:0};
+let lastSeen = 0;
+const PREDICT_TIME = 2000; // ms
+
+// Kamera
+const camera = new Camera(video, {
+  onFrame: async () => {
+    await pose.send({image: video});
+  },
+  width: canvas.width,
+  height: canvas.height
+});
+camera.start();
+
+// Pose
+const pose = new Pose({
+  locateFile: file =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+});
+
+pose.setOptions({
+  modelComplexity: 1,
+  smoothLandmarks: true,
+  minDetectionConfidence: 0.6,
+  minTrackingConfidence: 0.6
+});
+
+function drawHitbox(x, y, color, alpha=1) {
+  ctx.globalAlpha = alpha;
+
+  // Vücut
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x-40, y-80, 80, 160);
+
+  // Kafa
+  ctx.strokeStyle = "#00bfff";
+  ctx.strokeRect(x-20, y-120, 40, 30);
+
+  ctx.globalAlpha = 1;
+}
+
+pose.onResults(results => {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  const now = performance.now();
+
+  if (results.poseLandmarks) {
+    const lm = results.poseLandmarks;
+
+    // Omuz merkezi
+    const x = (lm[11].x + lm[12].x) / 2 * canvas.width;
+    const y = (lm[11].y + lm[12].y) / 2 * canvas.height;
+
+    drawHitbox(x, y, "red", 1);
+
+    if (lastPos) {
+      const dt = now - lastTime;
+      velocity.x = (x - lastPos.x) / dt;
+      velocity.y = (y - lastPos.y) / dt;
+    }
+
+    lastPos = {x, y};
+    lastTime = now;
+    lastSeen = now;
+
+  } else {
+    // 🟥 WALLHACK TAHMİN
+    const dt = now - lastSeen;
+    if (lastPos && dt < PREDICT_TIME) {
+      const px = lastPos.x + velocity.x * dt;
+      const py = lastPos.y + velocity.y * dt;
+      drawHitbox(px, py, "#800020", 0.6);
+    }
+  }
+
+  // 🥽 VR ORTA ÇİZGİ
+  ctx.strokeStyle = "white";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(canvas.width/2, 0);
+  ctx.lineTo(canvas.width/2, canvas.height);
+  ctx.stroke();
+});
+</script>
+
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Paintball AR ESP HUD</title>
+
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  background: black;
+  overflow: hidden;
+}
+
+video, canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+canvas {
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+
+<video id="video" autoplay playsinline></video>
+<canvas id="canvas"></canvas>
+
+<!-- MediaPipe -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+<script>
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let lastPos = null;
+let lastTime = 0;
+let velocity = {x:0, y:0};
+let lastSeen = 0;
+const PREDICT_TIME = 2000; // ms
+
+// Kamera
+const camera = new Camera(video, {
+  onFrame: async () => {
+    await pose.send({image: video});
+  },
+  width: canvas.width,
+  height: canvas.height
+});
+camera.start();
+
+// Pose
+const pose = new Pose({
+  locateFile: file =>
+    `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+});
+
+pose.setOptions({
+  modelComplexity: 1,
+  smoothLandmarks: true,
+  minDetectionConfidence: 0.6,
+  minTrackingConfidence: 0.6
+});
+
+function drawHitbox(x, y, color, alpha=1) {
+  ctx.globalAlpha = alpha;
+
+  // Vücut
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x-40, y-80, 80, 160);
+
+  // Kafa
+  ctx.strokeStyle = "#00bfff";
+  ctx.strokeRect(x-20, y-120, 40, 30);
+
+  ctx.globalAlpha = 1;
+}
+
+pose.onResults(results => {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  const now = performance.now();
+
+  if (results.poseLandmarks) {
+    const lm = results.poseLandmarks;
+
+    // Omuz merkezi
+    const x = (lm[11].x + lm[12].x) / 2 * canvas.width;
+    const y = (lm[11].y + lm[12].y) / 2 * canvas.height;
+
+    drawHitbox(x, y, "red", 1);
+
+    if (lastPos) {
+      const dt = now - lastTime;
+      velocity.x = (x - lastPos.x) / dt;
+      velocity.y = (y - lastPos.y) / dt;
+    }
+
+    lastPos = {x, y};
+    lastTime = now;
+    lastSeen = now;
+
+  } else {
+    // 🟥 WALLHACK TAHMİN
+    const dt = now - lastSeen;
+    if (lastPos && dt < PREDICT_TIME) {
+      const px = lastPos.x + velocity.x * dt;
+      const py = lastPos.y + velocity.y * dt;
+      drawHitbox(px, py, "#800020", 0.6);
+    }
+  }
+
+  // 🥽 VR ORTA ÇİZGİ
+  ctx.strokeStyle = "white";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(canvas.width/2, 0);
+  ctx.lineTo(canvas.width/2, canvas.height);
+  ctx.stroke();
+});
+</script>
+
+</body>
+</html>
